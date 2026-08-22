@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import cast
@@ -61,16 +62,23 @@ def _montar_dependencias(app: FastAPI, settings: Settings) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Monta as dependências no startup; no shutdown, descarta os engines e esvazia o
-    buffer do Langfuse (best-effort — sem credenciais, `flush_langfuse` não faz nada)."""
+    """Monta as dependências no startup; no shutdown, esvazia o buffer do Langfuse (best-effort
+    — sem credenciais, `flush_langfuse` não faz nada) e descarta os engines.
+
+    Flush vem PRIMEIRO no `finally` e isolado em seu próprio `try`: não depende dos engines, e
+    assim roda mesmo se `engine.dispose()`/`ro_engine.dispose()` falhar. `to_thread` porque
+    `Langfuse.shutdown()` é I/O de rede síncrono — não pode bloquear o loop (mesmo motivo de
+    `agent/llm.py` usar `to_thread` nas chamadas à OpenAI)."""
     settings = get_settings()
     _montar_dependencias(app, settings)
     try:
         yield
     finally:
-        await app.state.engine.dispose()
-        await app.state.ro_engine.dispose()
-        flush_langfuse(settings)
+        try:
+            await asyncio.to_thread(flush_langfuse, settings)
+        finally:
+            await app.state.engine.dispose()
+            await app.state.ro_engine.dispose()
 
 
 def criar_app() -> FastAPI:
