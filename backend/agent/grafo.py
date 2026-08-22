@@ -16,7 +16,7 @@ from langgraph.graph import END, START, StateGraph
 
 from agent.deps import Dependencias
 from agent.eventos import evento
-from agent.llm import Plano
+from agent.llm import Plano, PlanoInvalidoError
 from agent.periodo import resolver_janelas
 from agent.saude import avaliar_saude
 from agent.sql_templates import montar_consultas
@@ -73,9 +73,24 @@ def construir_grafo(deps: Dependencias, checkpointer: BaseCheckpointSaver | None
         return {"pergunta_resolvida": resolvida}
 
     async def planejar(state: EstadoAgente) -> dict[str, Any]:
-        """Escolhe KPI/dimensão (LLM, best-effort) e resolve o período-alvo (mês+1)."""
+        """Escolhe KPI/dimensão (LLM, best-effort) e resolve o período-alvo (mês+1).
+
+        Perguntas de ranking/comparação ("qual a melhor região?") não mapeiam a um único
+        valor de dimensão do catálogo — o LLM erra a escolha e `validar_plano` rejeita.
+        Best-effort (`agente.md`): isso É resolvível com uma pergunta de esclarecimento, não
+        com um crash — reaproveita o mesmo caminho de `precisa_clarificar`."""
         writer = get_stream_writer()
-        plano: Plano = await deps.llm.planejar(_pergunta_atual(state))
+        try:
+            plano: Plano = await deps.llm.planejar(_pergunta_atual(state))
+        except PlanoInvalidoError:
+            return {
+                "precisa_clarificar": True,
+                "clarificacao": (
+                    "Não consegui mapear isso a um KPI e uma dimensão específicos. Pode dizer "
+                    "qual indicador (ex.: faturamento, taxa de recompra) e um recorte (região, "
+                    "canal ou categoria)?"
+                ),
+            }
         if plano.precisa_clarificar:
             # Só quando NADA é resolvível — o roteamento manda para o nó de clarificação.
             return {

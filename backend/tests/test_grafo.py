@@ -6,7 +6,7 @@ from typing import Any
 
 from agent.deps import Dependencias
 from agent.grafo import construir_grafo
-from agent.llm import Plano
+from agent.llm import Plano, PlanoInvalidoError
 from agent.tools.run_sql import ResultadoSQL
 
 
@@ -212,6 +212,32 @@ async def test_pergunta_irresolvivel_devolve_clarificacao() -> None:
     estado = await grafo.ainvoke({"pergunta": "??"})
 
     assert "clarificacao" in tipos
+    assert "sql" not in tipos  # não rodou a perna quantitativa
+    assert "Preciso de mais contexto" in estado["relatorio"]
+    assert llm.recomendacoes_pedidas == 0
+
+
+class FakeLLMPlanoInvalido(FakeLLM):
+    """Simula o que `LLMOpenAI.planejar` faz de verdade: levanta PlanoInvalidoError quando o
+    LLM devolve um KPI/dimensão fora do catálogo (ex.: pergunta de ranking — 'qual a melhor
+    região?' — não mapeia a um único valor de dimensão)."""
+
+    async def planejar(self, pergunta: str) -> Plano:
+        raise PlanoInvalidoError("KPI fora do catálogo: 'melhor_regiao'.")
+
+
+async def test_plano_invalido_vira_clarificacao_nao_crash() -> None:
+    """PlanoInvalidoError no nó `planejar` não propaga — vira o mesmo caminho de clarificação
+    de uma pergunta irresolvível, não um evento `erro`/exceção não tratada."""
+    llm = FakeLLMPlanoInvalido(Plano(kpi_alvo="faturamento"))  # plano nunca usado aqui
+    grafo = construir_grafo(_deps(llm, FakeQdrant({})))
+    tipos = []
+    async for chunk in grafo.astream({"pergunta": "Qual a melhor região?"}, stream_mode="custom"):
+        tipos.append(chunk["tipo"])
+    estado = await grafo.ainvoke({"pergunta": "Qual a melhor região?"})
+
+    assert "clarificacao" in tipos
+    assert "erro" not in tipos
     assert "sql" not in tipos  # não rodou a perna quantitativa
     assert "Preciso de mais contexto" in estado["relatorio"]
     assert llm.recomendacoes_pedidas == 0
