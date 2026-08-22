@@ -86,3 +86,31 @@ def test_cliente_openai_com_credenciais_registra_o_cliente_langfuse(
 
     assert cliente.api_key == "sk-abc"
     assert registrado["client"]["public_key"] == "pk-teste"
+
+
+def test_flush_sem_credenciais_nao_chama_o_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sem chaves, `flush_langfuse` não chama `get_client` — nunca existiu cliente a esvaziar."""
+    monkeypatch.setattr(observability, "get_client", lambda **_: pytest.fail("não deveria chamar"))
+    settings = Settings(langfuse_public_key=None, langfuse_secret_key=None)
+
+    observability.flush_langfuse(settings)  # não levanta
+
+
+def test_flush_com_credenciais_chama_shutdown_do_cliente(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Com as duas chaves, `flush_langfuse` busca o cliente pelo public_key e chama shutdown()."""
+    chamadas: list[str] = []
+
+    class FakeClient:
+        def shutdown(self) -> None:
+            chamadas.append("shutdown")
+
+    def fake_get_client(*, public_key: str) -> FakeClient:
+        chamadas.append(f"get_client:{public_key}")
+        return FakeClient()
+
+    monkeypatch.setattr(observability, "get_client", fake_get_client)
+    settings = Settings(langfuse_public_key="pk-teste", langfuse_secret_key="sk-teste")
+
+    observability.flush_langfuse(settings)
+
+    assert chamadas == ["get_client:pk-teste", "shutdown"]
