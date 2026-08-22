@@ -220,7 +220,11 @@ async def test_pergunta_irresolvivel_devolve_clarificacao() -> None:
 class FakeLLMPlanoInvalido(FakeLLM):
     """Simula o que `LLMOpenAI.planejar` faz de verdade: levanta PlanoInvalidoError quando o
     LLM devolve um KPI/dimensão fora do catálogo (ex.: pergunta de ranking — 'qual a melhor
-    região?' — não mapeia a um único valor de dimensão)."""
+    região?' — não mapeia a um único valor de dimensão). Não depende de um `Plano` — nunca
+    chega a devolver um."""
+
+    def __init__(self) -> None:
+        super().__init__(Plano(kpi_alvo="faturamento"))  # nunca usado; planejar() sempre levanta
 
     async def planejar(self, pergunta: str) -> Plano:
         raise PlanoInvalidoError("KPI fora do catálogo: 'melhor_regiao'.")
@@ -229,7 +233,7 @@ class FakeLLMPlanoInvalido(FakeLLM):
 async def test_plano_invalido_vira_clarificacao_nao_crash() -> None:
     """PlanoInvalidoError no nó `planejar` não propaga — vira o mesmo caminho de clarificação
     de uma pergunta irresolvível, não um evento `erro`/exceção não tratada."""
-    llm = FakeLLMPlanoInvalido(Plano(kpi_alvo="faturamento"))  # plano nunca usado aqui
+    llm = FakeLLMPlanoInvalido()
     grafo = construir_grafo(_deps(llm, FakeQdrant({})))
     tipos = []
     async for chunk in grafo.astream({"pergunta": "Qual a melhor região?"}, stream_mode="custom"):

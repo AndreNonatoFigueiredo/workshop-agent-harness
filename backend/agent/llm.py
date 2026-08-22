@@ -15,7 +15,7 @@ import json
 from typing import Any, Protocol
 
 from openai import OpenAI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from agent.catalogo import KPIS, VALORES_DIMENSAO, dimensao_valida
 
@@ -114,7 +114,15 @@ class LLMOpenAI:
             pergunta=pergunta,
         )
         bruto = await self._chat(self._rapido, prompt, json_mode=True)
-        return validar_plano(Plano.model_validate(json.loads(bruto)))
+        # JSON malformado ou fora do schema tem a MESMA causa raiz que KPI/dimensão fora do
+        # catálogo (saída não-determinística do LLM) — vira PlanoInvalidoError também, pro nó
+        # `planejar` do grafo tratar os dois com um único except (best-effort: clarificação,
+        # não crash).
+        try:
+            plano = Plano.model_validate(json.loads(bruto))
+        except (json.JSONDecodeError, ValidationError) as exc:
+            raise PlanoInvalidoError(f"Resposta do LLM não é um plano válido: {bruto!r}") from exc
+        return validar_plano(plano)
 
     async def diagnosticar(
         self, *, pergunta: str, periodo_alvo: str, dados: str, diagnosticos: str
