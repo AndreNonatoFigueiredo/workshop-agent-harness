@@ -19,7 +19,7 @@ grafo roda normal, sem tracing.
 from __future__ import annotations
 
 from langchain_core.callbacks import BaseCallbackHandler
-from langfuse import Langfuse
+from langfuse import Langfuse, get_client
 from langfuse.langchain import CallbackHandler
 from openai import OpenAI
 
@@ -53,3 +53,13 @@ def cliente_openai(settings: Settings, *, api_key: str) -> OpenAI:
 
         return OpenAIComTracing(api_key=api_key)
     return OpenAI(api_key=api_key)
+
+
+def flush_langfuse(settings: Settings) -> None:
+    """Esvazia o buffer de spans/generations no shutdown do processo (`lifespan` do FastAPI).
+
+    Sem as duas chaves, nunca chegou a existir um cliente registrado — no-op, sem tocar o SDK
+    (mesmo princípio best-effort das outras duas funções deste módulo)."""
+    if not settings.langfuse_public_key or not settings.langfuse_secret_key:
+        return
+    get_client(public_key=settings.langfuse_public_key).shutdown()

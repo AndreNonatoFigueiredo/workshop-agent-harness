@@ -12,7 +12,7 @@ from qdrant_client import QdrantClient
 from agent.deps import Dependencias, executor_run_sql
 from agent.grafo import construir_grafo
 from agent.llm import criar_llm
-from agent.observability import cliente_openai
+from agent.observability import cliente_openai, flush_langfuse
 from agent.tools.embeddings import criar_embedder
 from agent.tools.search import ClienteQdrant
 from app.config import Settings, get_settings
@@ -61,13 +61,16 @@ def _montar_dependencias(app: FastAPI, settings: Settings) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Monta as dependências no startup e descarta os engines no shutdown."""
-    _montar_dependencias(app, get_settings())
+    """Monta as dependências no startup; no shutdown, descarta os engines e esvazia o
+    buffer do Langfuse (best-effort — sem credenciais, `flush_langfuse` não faz nada)."""
+    settings = get_settings()
+    _montar_dependencias(app, settings)
     try:
         yield
     finally:
         await app.state.engine.dispose()
         await app.state.ro_engine.dispose()
+        flush_langfuse(settings)
 
 
 def criar_app() -> FastAPI:
