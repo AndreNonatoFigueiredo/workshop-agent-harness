@@ -8,6 +8,7 @@ A resposta é incremental — o relatório não é bufferizado inteiro antes de 
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from collections.abc import AsyncIterator, Sequence
 from datetime import date, datetime
@@ -21,6 +22,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from harness.artefatos import Artefatos
 from harness.modelo import RUNS, RegistroRun
 from harness.repo import fontes_recomendadas_da_thread, gravar_run
+
+logger = logging.getLogger(__name__)
 
 
 def _json_safe(obj: Any) -> Any:
@@ -72,6 +75,7 @@ async def gerar_eventos_sse(
                 estado_final = chunk
     except Exception as exc:  # noqa: BLE001 — traduz a falha em evento SSE, sem vazar detalhe
         erro = type(exc).__name__
+        logger.exception("Falha ao gerar o relatório (thread_id=%s)", thread_id)
         yield _sse({"tipo": "erro", "mensagem": "Falha ao gerar o relatório."})
 
     # Persistência acontece SEMPRE: todo run é gravado, inclusive os que falharam no grafo

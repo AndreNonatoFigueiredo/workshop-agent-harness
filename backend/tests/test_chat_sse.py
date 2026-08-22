@@ -145,3 +145,38 @@ async def test_chat_responde_sse_incremental_e_persiste(
     async with eng.connect() as conn:
         n = (await conn.execute(sa.select(sa.func.count()).select_from(tabela))).scalar_one()
     assert n == 1
+
+
+class _GrafoQueQuebra:
+    """Fake do grafo cujo `astream` levanta no meio — simula uma falha inesperada no nó."""
+
+    async def astream(self, *_args: Any, **_kwargs: Any) -> AsyncIterator[tuple[str, Any]]:
+        raise RuntimeError("falha inesperada do nó")
+        yield  # pragma: no cover — torna a função um generator; nunca alcançado
+
+
+async def test_falha_inesperada_no_grafo_e_logada(
+    app_e_engine: tuple[Any, AsyncEngine, sa.Table],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Uma exceção não tratada no grafo vira evento `erro` no SSE E fica logada no servidor —
+    antes, o `except` genérico só guardava o nome da exceção, sem nenhum rastro em log."""
+    from app.dependencies import get_grafo
+    from app.services import chat as chat_svc
+
+    app, _eng, tabela = app_e_engine
+    monkeypatch.setattr(chat_svc, "RUNS", tabela)
+    app.dependency_overrides[get_grafo] = lambda: _GrafoQueQuebra()
+
+    transport = ASGITransport(app=app)
+    with caplog.at_level("ERROR", logger="app.services.chat"):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with client.stream(
+                "POST", "/chat", json={"pergunta": "Qualquer pergunta"}
+            ) as resp:
+                corpo = "".join([p async for p in resp.aiter_text()])
+
+    assert "event: erro" in corpo
+    assert any("Falha ao gerar o relatório" in rec.message for rec in caplog.records)
+    assert any(rec.exc_info is not None for rec in caplog.records)
