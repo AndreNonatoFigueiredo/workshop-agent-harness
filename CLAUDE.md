@@ -8,7 +8,8 @@ Backend **FastAPI** (Python 3.13, `uv`) + **LangChain/LangGraph** (grafo determi
 livre). Frontend **React + Vite**. Stores: **Postgres** (schemas `negocio` + `harness`), **Qdrant**
 (3 coleções já populadas), **MinIO** (relatórios/gráficos). **nginx** = única porta exposta ao host.
 Embeddings OpenAI `text-embedding-3-large` (3072d), só para embeddar a *query* em runtime.
-**Langfuse** para observabilidade — *planejado, ainda não no `docker-compose.yml`*.
+**Langfuse Cloud** para observabilidade, via `LANGFUSE_PUBLIC_KEY`/`SECRET_KEY`/`HOST` no `.env`
+(sem serviço novo no `docker-compose.yml`) — best-effort: sem as chaves, tracing fica desligado.
 
 ## Comandos
 - subir tudo: `docker compose up -d`

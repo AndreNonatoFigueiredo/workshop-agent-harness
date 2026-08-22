@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     # Âncora temporal: "hoje" injetável (determinismo dos evals). "próximo mês" = +1 daqui.
     hoje_ancora: date = date(2026, 6, 16)
 
+    # Observabilidade (Langfuse Cloud) — best-effort: sem as duas chaves, tracing fica
+    # desligado e o /chat funciona normal (`agent.observability.callbacks_langfuse`).
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_host: str = "https://cloud.langfuse.com"
+
     @property
     def agente_ro_url(self) -> str:
         """DSN somente-leitura: a admin com usuário/senha trocados pelo papel RO."""

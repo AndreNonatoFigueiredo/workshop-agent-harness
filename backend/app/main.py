@@ -7,12 +7,12 @@ from typing import cast
 from fastapi import FastAPI
 from langgraph.checkpoint.memory import InMemorySaver
 from minio import Minio
-from openai import OpenAI
 from qdrant_client import QdrantClient
 
 from agent.deps import Dependencias, executor_run_sql
 from agent.grafo import construir_grafo
 from agent.llm import criar_llm
+from agent.observability import cliente_openai
 from agent.tools.embeddings import criar_embedder
 from agent.tools.search import ClienteQdrant
 from app.config import Settings, get_settings
@@ -26,8 +26,9 @@ def _montar_dependencias(app: FastAPI, settings: Settings) -> None:
     app.state.engine = criar_engine(settings.database_url)  # admin (RW): harness
     app.state.ro_engine = criar_engine(settings.agente_ro_url)  # papel agente_ro: run_sql
 
-    # Clientes externos são lazy (não validam credenciais na construção).
-    openai_client = OpenAI(api_key=settings.openai_api_key or "sk-absent")
+    # Clientes externos são lazy (não validam credenciais na construção). Com Langfuse
+    # configurado, `openai_client` também gera 1 generation por chamada (tokens/custo).
+    openai_client = cliente_openai(settings, api_key=settings.openai_api_key or "sk-absent")
     qdrant = QdrantClient(url=settings.qdrant_url)
     minio = Minio(
         settings.minio_endpoint,

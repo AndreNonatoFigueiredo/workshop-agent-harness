@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
 import sqlalchemy as sa
+from langchain_core.callbacks import BaseCallbackHandler
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from harness.artefatos import Artefatos
@@ -46,6 +47,7 @@ async def gerar_eventos_sse(
     artefatos: Artefatos,
     thread_id: str | None = None,
     tabela: sa.Table | None = None,
+    callbacks: Sequence[BaseCallbackHandler] = (),
 ) -> AsyncIterator[str]:
     """Roda o grafo (com checkpointer por thread), faz streaming e persiste run + artefatos."""
     tabela = tabela if tabela is not None else RUNS  # resolvido em runtime (testável)
@@ -53,7 +55,11 @@ async def gerar_eventos_sse(
     # Não repetir: fontes já recomendadas nesta conversa (fonte durável = harness).
     fontes_ja = await fontes_recomendadas_da_thread(engine_admin, thread_id, tabela=tabela)
     entrada = {"pergunta": pergunta, "fontes_ja_recomendadas": sorted(fontes_ja)}
-    config = {"configurable": {"thread_id": thread_id}}
+    config: dict[str, Any] = {"configurable": {"thread_id": thread_id}}
+    if callbacks:
+        # Cada nó do grafo vira 1 span no Langfuse; session_id correlaciona com harness.runs.
+        config["callbacks"] = list(callbacks)
+        config["metadata"] = {"langfuse_session_id": thread_id}
 
     estado_final: dict[str, Any] = {}
     erro: str | None = None

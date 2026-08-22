@@ -13,6 +13,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agent.observability import callbacks_langfuse
+from app.config import Settings, get_settings
 from app.dependencies import get_artefatos, get_engine, get_grafo
 from app.services.chat import gerar_eventos_sse
 from harness.artefatos import Artefatos
@@ -35,6 +37,7 @@ async def chat(
     grafo: Any = Depends(get_grafo),
     engine: AsyncEngine = Depends(get_engine),
     artefatos: Artefatos = Depends(get_artefatos),
+    settings: Settings = Depends(get_settings),
 ) -> StreamingResponse:
     """Responde em streaming SSE: premissas → sql → fontes → diagnóstico → recomendações → run.
 
@@ -46,5 +49,7 @@ async def chat(
         engine_admin=engine,
         artefatos=artefatos,
         thread_id=str(corpo.thread_id) if corpo.thread_id is not None else None,
+        # Tracing best-effort: sem credenciais Langfuse configuradas, devolve [] (sem custo).
+        callbacks=callbacks_langfuse(settings),
     )
     return StreamingResponse(gerador, media_type="text/event-stream")
